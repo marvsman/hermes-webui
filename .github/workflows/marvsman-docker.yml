@@ -78,7 +78,7 @@ jobs:
           build-args: |
             HERMES_BASE=${{ env.GHCR_BASE_IMAGE }}:${{ steps.ver.outputs.version }}
             GITLAB_MCP_VERSION=2.1.52
-            DOKPLOY_CLI_VERSION=0.1.3
+            DOKPLOY_CLI_VERSION=0.30.2
           cache-from: type=gha,scope=marvsman
           cache-to: type=gha,scope=marvsman,mode=max
 
