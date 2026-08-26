@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+#
+# Marvsman layer on top of Hermes WebUI.
+#
+# Base image: CI builds hermes-webui from THIS fork's source (upstream Dockerfile)
+# and passes it via --build-arg HERMES_BASE. Local/manual builds fall back to
+# upstream stable.
+#
+# Adds:
+#   - sudo (NOPASSWD for hermeswebui)  → runtime CLI installs inside the sandbox
+#   - nodejs + npm                     → gitlab-mcp, dokploy CLI, agent tooling
+#   - gh (GitHub CLI)
+#   - @zereight/mcp-gitlab             → installed only, NOT configured
+#
+ARG HERMES_BASE=ghcr.io/nesquena/hermes-webui:0.50.43
+FROM ${HERMES_BASE}
+
+USER root
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        sudo \
+        nodejs \
+        npm \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+ARG GITLAB_MCP_VERSION=2.1.52
+ARG DOKPLOY_CLI_VERSION=0.1.3
+RUN npm install -g "@zereight/mcp-gitlab@${GITLAB_MCP_VERSION}" "dokploy@${DOKPLOY_CLI_VERSION}" \
+    && npm cache clean --force
+
+RUN echo 'hermeswebui ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/hermeswebui \
+    && chmod 0440 /etc/sudoers.d/hermeswebui
+
+ENV HERMES_WEBUI_HOST=0.0.0.0 \
+    HERMES_WEBUI_PORT=8787
+
+EXPOSE 8787
+
+CMD ["/hermeswebui_init.bash"]

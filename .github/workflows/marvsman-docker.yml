@@ -1,0 +1,88 @@
+name: Marvsman Docker Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'exp-v*'
+      - 'mv-*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (defaults to master)'
+        required: false
+        default: 'master'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DH_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME || 'marvsman' }}/hermes-marvsman
+  GHCR_BASE_IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME:-${{ inputs.ref }}}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # Stage A: hermes-webui from this fork's source (upstream Dockerfile, unmodified)
+      - name: Build and push base (fork source)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.GHCR_BASE_IMAGE }}:${{ steps.ver.outputs.version }}
+            ${{ env.GHCR_BASE_IMAGE }}:${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+          build-args: HERMES_VERSION=${{ steps.ver.outputs.version }}
+          cache-from: type=gha,scope=base
+          cache-to: type=gha,scope=base,mode=max
+
+      # Stage B: marvsman layer on top of stage A output
+      - name: Build and push marvsman image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.marvsman
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.DH_IMAGE }}:${{ steps.ver.outputs.version }}
+            ${{ env.DH_IMAGE }}:latest
+          build-args: |
+            HERMES_BASE=${{ env.GHCR_BASE_IMAGE }}:${{ steps.ver.outputs.version }}
+            GITLAB_MCP_VERSION=2.1.52
+            DOKPLOY_CLI_VERSION=0.1.3
+          cache-from: type=gha,scope=marvsman
+          cache-to: type=gha,scope=marvsman,mode=max
+
+      - name: Smoke test (amd64)
+        run: |
+          docker run --rm --platform linux/amd64 "${{ env.DH_IMAGE }}:${{ steps.ver.outputs.version }}" \
+            sh -c 'sudo -n true && which git node npm gh mcp-gitlab dokploy'
