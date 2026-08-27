@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import importlib
 import json
+import pathlib
+import re
 import sys
 import types
 from unittest.mock import patch
@@ -230,3 +232,72 @@ def test_route_not_hijacking_quota_path(monkeypatch, usage_limits_module):
     src = inspect.getsource(routes_mod.handle_get)
     assert 'parsed.path == "/api/usage/limits"' in src
     assert 'parsed.path == "/api/usage/limits"' not in seen_paths or True
+
+
+# ---------------------------------------------------------------------------
+# Frontend integration: the dedicated usage view must be hidden by default and
+# only appear when the user navigates to the usage panel. Regression guard for
+# the bug where #mainUsage rendered on top of chat/settings on every page.
+# ---------------------------------------------------------------------------
+REPO = pathlib.Path(__file__).parent.parent
+HTML = (REPO / "static" / "index.html").read_text(encoding="utf-8")
+CSS = (REPO / "static" / "style.css").read_text(encoding="utf-8")
+PANELS_JS = (REPO / "static" / "panels.js").read_text(encoding="utf-8")
+
+
+def _strip_css_comments(css):
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def test_main_usage_hidden_by_default():
+    """#mainUsage must be display:none when <main> has no showing-* class."""
+    css = _strip_css_comments(CSS)
+    assert re.search(
+        r"main\.main\s*>\s*#mainUsage\s*\{\s*display:\s*none\s*;?\s*\}", css
+    ), "#mainUsage missing from the hidden-by-default main-view list"
+
+
+def test_main_usage_visible_only_on_showing_usage():
+    """#mainUsage must be display:flex only when <main> has .showing-usage."""
+    css = _strip_css_comments(CSS)
+    assert re.search(
+        r"main\.main\.showing-usage\s*>\s*#mainUsage\s*\{\s*display:\s*flex\s*;?\s*\}",
+        css,
+    ), "Missing main.main.showing-usage > #mainUsage { display:flex } rule"
+
+
+def test_chat_default_excludes_showing_usage():
+    """The default chat view must not re-appear when the usage panel is active."""
+    css = _strip_css_comments(CSS)
+    match = re.search(
+        r"main\.main:not\(.*?>\s*#mainChat\s*\{[^}]*display:\s*flex[^}]*\}",
+        css,
+        re.DOTALL,
+    )
+    assert match, "Missing default #mainChat visibility rule"
+    assert ".showing-usage" in match.group(0), (
+        "Default chat rule must exclude .showing-usage so usage view is not covered"
+    )
+
+
+def test_settings_menu_has_usage_limits_shortcut():
+    """Settings side menu should offer a shortcut to the dedicated usage page."""
+    assert re.search(
+        r'<button[^>]*class="side-menu-item"[^>]*'
+        r'onclick="switchPanel\(\'usage\'\);_closeMobileSidebarAfterPanelSelection\(\);"[^>]*>.*?'
+        r'<span[^>]*data-i18n="tab_usage"[^>]*>Usage Limits</span>.*?</button>',
+        HTML,
+        re.DOTALL,
+    ), "Settings side menu missing Usage Limits shortcut"
+
+
+def test_usage_panel_registered_in_main_view_panels():
+    """usage must be in MAIN_VIEW_PANELS so switchPanel can toggle showing-usage."""
+    match = re.search(r"const MAIN_VIEW_PANELS = ([^;]+);", PANELS_JS)
+    assert match, "MAIN_VIEW_PANELS constant not found"
+    assert "'usage'" in match.group(1), "MAIN_VIEW_PANELS missing 'usage'"
+
+
+def test_usage_lazy_loader_attached_to_switch_panel():
+    """switchPanel must load usage data when navigating to the usage panel."""
+    assert "if (nextPanel === 'usage') { loadUsageLimits(); loadUsagePeek(); }" in PANELS_JS
