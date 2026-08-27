@@ -43,8 +43,9 @@ const APP_TITLEBAR_KEYS = {
   chat: 'tab_chat', tasks: 'tab_tasks', skills: 'tab_skills',
   memory: 'tab_memory', workspaces: 'tab_workspaces',
   profiles: 'tab_profiles', todos: 'tab_todos', insights: 'tab_insights', logs: 'tab_logs', settings: 'tab_settings',
+  usage: 'tab_usage',
 };
-const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','insights','logs','plugin'];
+const MAIN_VIEW_PANELS = ['settings','skills','memory','tasks','kanban','workspaces','profiles','insights','usage','logs','plugin'];
 const MAIN_VIEW_SIDEBAR_PANEL_FALLBACKS = { plugin: 'settings' };
 
 /**
@@ -458,6 +459,7 @@ async function switchPanel(name, opts = {}) {
   if (nextPanel === 'profiles') await loadProfilesPanel();
   if (nextPanel === 'todos') loadTodos();
   if (nextPanel === 'insights') await loadInsights();
+  if (nextPanel === 'usage') { loadUsageLimits(); loadUsagePeek(); }
   if (nextPanel === 'logs') await loadLogs();
   _syncLogsAutoRefresh();
   if (typeof _syncSystemHealthMonitorVisibility === 'function') _syncSystemHealthMonitorVisibility();
@@ -13472,4 +13474,115 @@ function updateNotificationPermissionStatus(){
     btn.setAttribute('aria-disabled', granted?'true':'false');
   }
   if(btnWrap) btnWrap.title=label;
+}
+
+// ── Usage Limits dashboard (subscription rate-limit windows) ────────────────
+// One fetch to /api/usage/limits returns every configured provider's windows;
+// rendering happens here so browser code can never disagree with the backend
+// on which providers are supported or how percentages are normalized.
+
+function _usageWindowHtml(win){
+  const used=Number(win&&win.used_percent);
+  if(!isFinite(used)) return '';
+  const pct=Math.max(0,Math.min(100,used));
+  const tone=pct>=90?'danger':(pct>=70?'warn':'');
+  const resetTxt=_usageResetText(win);
+  const detail=win&&win.detail?`<small>${esc(String(win.detail))}</small>`:'';
+  return `<div class="usage-window usage-window-${tone}">
+    <span>${esc(String((win&&win.label)||''))}</span>
+    <strong>${pct.toFixed(0)}%</strong>
+    <div class="usage-meter" role="img" aria-label="${esc(String((win&&win.label)||''))}: ${pct.toFixed(0)} percent used"><i style="width:${pct.toFixed(1)}%"></i></div>
+    ${detail}
+    <small>${resetTxt}</small>
+  </div>`;
+}
+
+function _usageResetText(win){
+  if(!win) return '';
+  const secs=Number(win.reset_in_seconds);
+  if(isFinite(secs)&&secs>0){
+    const h=Math.floor(secs/3600), m=Math.floor((secs%3600)/60);
+    return t('usage_resets_in').replace('{time}', h>0?`${h}h ${m}m`:`${m}m`);
+  }
+  if(win.reset_at){
+    try{ return new Date(win.reset_at).toLocaleString(); }
+    catch(_e){ /* fall through */ }
+  }
+  return win.detail||'';
+}
+
+function _usageCardHtml(row){
+  const name=esc(String(row.display_name||row.provider||''));
+  const statusBadge=row.ok
+    ? `<span class="provider-quota-badge provider-quota-card-available">OK</span>`
+    : `<span class="provider-quota-badge provider-quota-card-${esc(String(row.status||'unavailable'))}">${esc(t('usage_status_'+String(row.status||'unavailable')))}</span>`;
+  let body='';
+  if(!row.ok && !(row.windows||[]).length){
+    body=`<div class="provider-quota-message">${esc(String(row.message||t('provider_quota_unavailable')))}</div>`;
+  }else{
+    body=(row.windows||[]).map(_usageWindowHtml).join('')
+      + `<div class="provider-quota-details">${(row.details||[]).map(d=>`<span>${esc(String(d))}</span>`).join('')}</div>`
+      + (row.message?`<div class="provider-quota-message">${esc(String(row.message))}</div>`:'');
+  }
+  const plan=(row.plan?`<span class="provider-quota-subtitle">${esc(t('usage_plan_label'))}${esc(String(row.plan))}</span>`:'');
+  return `<div class="provider-quota-card usage-card usage-card-${row.ok?'ok':'off'}">
+    <div class="provider-quota-header">
+      <div>
+        <div class="provider-quota-title">${name}</div>
+        ${plan}
+      </div>
+      <div class="provider-quota-actions">${statusBadge}</div>
+    </div>
+    <div class="usage-windows">${body}</div>
+  </div>`;
+}
+
+async function _fetchUsageLimits(force){
+  const endpoint=force?`/api/usage/limits?refresh=1&ts=${Date.now()}`:'/api/usage/limits';
+  const data=await api(endpoint,{cache:'no-store'});
+  return (data&&typeof data==='object')?data:{ok:false,providers:[]};
+}
+
+async function loadUsageLimits(force){
+  const box=$('usageLimitsContent');
+  const btn=$('usageLimitsRefreshBtn');
+  if(!box) return;
+  if(btn){btn.disabled=true;btn.setAttribute('aria-busy','true');}
+  try{
+    const data=await _fetchUsageLimits(force);
+    const rows=data.providers||[];
+    box.innerHTML=rows.length
+      ? rows.map(_usageCardHtml).join('')
+      : `<div style="color:var(--muted);font-size:12px">${esc(t('provider_quota_unavailable'))}</div>`;
+    const statusEl=$('usageLimitsStatus');
+    if(statusEl&&data.generated_at){
+      try{ statusEl.textContent=t('usage_checked_prefix')+new Date(data.generated_at).toLocaleTimeString(); }
+      catch(_e){ statusEl.textContent=''; }
+    }
+  }catch(e){
+    box.innerHTML=`<div style="color:var(--error);padding:12px;font-size:13px">${esc(t('error_prefix')+(e.message||String(e)))}</div>`;
+  }finally{
+    if(btn){btn.disabled=false;btn.removeAttribute('aria-busy');}
+  }
+}
+
+let _usagePeekCache=null;
+
+async function loadUsagePeek(){
+  const box=$('usageLimitsPeekBody');
+  if(!box) return;
+  try{
+    _usagePeekCache=await _fetchUsageLimits(false);
+    box.innerHTML=(_usagePeekCache.providers||[]).map(r=>{
+      const first=(r.windows&&r.windows[0])||null;
+      if(!first) return '';
+      const pct=Math.max(0,Math.min(100,Number(first.used_percent)||0));
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text);font-weight:650"><span>${esc(String(r.display_name||r.provider))}</span><span>${pct.toFixed(0)}%</span></div>
+        <div class="usage-meter" role="img" aria-label="${esc(String(r.display_name||r.provider))}: ${pct.toFixed(0)} percent used"><i style="width:${pct.toFixed(1)}%"></i></div>
+      </div>`;
+    }).join('')||`<div style="color:var(--muted);font-size:12px">${esc(t('provider_quota_unavailable'))}</div>`;
+  }catch(_e){
+    // Sidebar peek is decorative; keep stale content rather than erroring.
+  }
 }
