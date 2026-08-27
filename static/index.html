@@ -387,6 +387,10 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
             <span data-i18n="providers_tab_title">Providers</span>
           </button>
+          <button type="button" class="side-menu-item" data-settings-section="tokenMonitor" onclick="switchSettingsSection('tokenMonitor',{fromSidebarItem:true})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+            <span data-i18n="settings_tab_token_monitor">Token Monitor</span>
+          </button>
           <button type="button" class="side-menu-item" onclick="switchPanel('usage');_closeMobileSidebarAfterPanelSelection();">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
             <span data-i18n="tab_usage">Usage Limits</span>
@@ -1515,6 +1519,29 @@
             <div id="providersEmpty" style="display:none;text-align:center;padding:32px 0;color:var(--muted);font-size:13px" data-i18n="providers_empty">
               No configurable providers found.
             </div>
+          </div>
+          <div class="settings-pane" id="settingsPaneTokenMonitor">
+            <div class="settings-section-head">
+              <div>
+                <div class="settings-section-title" data-i18n="settings_section_token_monitor_title">Token Monitor</div>
+                <div class="settings-section-meta" data-i18n="settings_section_token_monitor_meta">Choose which provider usage limits to monitor and how to connect them.</div>
+              </div>
+            </div>
+            <div class="settings-field">
+              <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5" data-i18n="settings_desc_token_monitor_intro">
+                The token monitor shows subscription rate-limit windows on the Usage Limits panel. Enable only the providers you use to keep the dashboard focused.
+              </div>
+              <div id="tokenMonitorProvidersList" style="display:flex;flex-direction:column;gap:10px">
+                <!-- Populated dynamically by loadTokenMonitorSettings() -->
+              </div>
+            </div>
+            <div id="tokenMonitorClaudeHelp" class="settings-field" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:var(--accent-bg);border:1px solid var(--border2)">
+              <div style="font-weight:650;font-size:13px;color:var(--text);margin-bottom:6px" data-i18n="settings_token_monitor_claude_help_title">Connecting Claude limits</div>
+              <div style="font-size:12px;color:var(--muted);line-height:1.5" data-i18n="settings_token_monitor_claude_help_body">
+                Claude uses OAuth through the Hermes Agent. To monitor Claude limits, authenticate with Claude in a terminal by running <code>hermes auth</code> or <code>hermes model</code>, then reload the WebUI. No API key is entered here.
+              </div>
+            </div>
+            <div id="tokenMonitorStatus" class="settings-autosave-status" aria-live="polite"></div>
           </div>
           <div class="settings-pane" id="settingsPanePlugins">
             <div class="settings-section-head">

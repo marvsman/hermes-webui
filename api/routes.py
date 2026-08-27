@@ -13314,9 +13314,18 @@ def handle_get(handler, parsed) -> bool:
         query = parse_qs(parsed.query)
         refresh = (query.get("refresh", [""])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
         with profile_env_for_active_request_readonly("/api/usage/limits", logger_override=logger):
-            from api.usage_limits import get_all_provider_usage_limits
+            from api.usage_limits import get_all_provider_usage_limits, _enabled_providers_from_settings
 
-            return j(handler, get_all_provider_usage_limits(refresh=refresh))
+            settings = load_settings()
+            enabled = _enabled_providers_from_settings(settings)
+            return j(handler, get_all_provider_usage_limits(refresh=refresh, enabled_providers=enabled))
+
+    if parsed.path == "/api/usage/limits/settings":
+        # Provider metadata + enabled state for the Token Monitor settings pane.
+        from api.usage_limits import get_token_monitor_settings_payload
+
+        settings = load_settings()
+        return j(handler, get_token_monitor_settings_payload(settings))
 
     if parsed.path == "/api/provider/cost-history":
         query = parse_qs(parsed.query)

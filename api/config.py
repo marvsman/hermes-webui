@@ -9713,6 +9713,12 @@ _SETTINGS_DEFAULTS = {
     "workspace_todos_tab": False,  # show a Todos tab in the workspace panel (right side)
     "api_redact_enabled": True,  # redact sensitive data (API keys, secrets) from API responses
     "dashboard_plugins": {},  # plugin_name -> bool, opt-in per plugin (default off per PF-10b)
+    "token_monitor_enabled_providers": {  # provider_id -> bool, per-provider enable for Usage Limits dashboard
+        "anthropic": True,
+        "openai-codex": True,
+        "openrouter": True,
+        "opencode-go": True,
+    },
     "sidebar_density": "compact",  # compact | detailed
     "auto_title_refresh_every": "0",  # adaptive title refresh: 0=off, 5/10/20=every N exchanges
     "default_message_mode": "steer",  # behavior when sending while agent is running: queue | interrupt | steer
@@ -10157,10 +10163,17 @@ def save_settings(settings: dict) -> dict:
             # polluted with non-bool/non-str junk from a crafted POST.
             current_dash.update({k: bool(v) for k, v in _dashboard_plugins.items() if isinstance(k, str)})
             current["dashboard_plugins"] = current_dash
+    # Deep-merge token_monitor_enabled_providers dict (provider_id -> bool)
+    _token_monitor = settings.get("token_monitor_enabled_providers")
+    if isinstance(_token_monitor, dict):
+        current_tm = current.get("token_monitor_enabled_providers", {})
+        if isinstance(current_tm, dict):
+            current_tm.update({k: bool(v) for k, v in _token_monitor.items() if isinstance(k, str)})
+            current["token_monitor_enabled_providers"] = current_tm
     for k, v in settings.items():
         key_is_speech = k in _SETTINGS_SPEECH_KEYS
-        # dashboard_plugins is deep-merged above (not a flat allowlisted scalar).
-        if k == "dashboard_plugins":
+        # dashboard_plugins and token_monitor_enabled_providers are deep-merged above.
+        if k in {"dashboard_plugins", "token_monitor_enabled_providers"}:
             continue
         if k in _SETTINGS_ALLOWED_KEYS:
             if k == "theme":
