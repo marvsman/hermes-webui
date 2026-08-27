@@ -17,8 +17,6 @@ import importlib
 import json
 import sys
 import types
-import urllib.request
-from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
