@@ -39,6 +39,27 @@ DISPLAY_NAMES = {
     "opencode-go": "OpenCode Go",
 }
 
+PROVIDER_CONNECTION_HELP = {
+    "anthropic": {
+        "auth_type": "oauth",
+        "setup_text": "Claude limits are read from your Hermes Agent OAuth session. Run `hermes auth` (or `hermes model` and pick Claude) in a terminal, then reload this page.",
+    },
+    "openai-codex": {
+        "auth_type": "oauth",
+        "setup_text": "Codex limits are read from your Hermes Agent OAuth session. Run `hermes auth` (or `hermes model` and pick Codex) in a terminal, then reload this page.",
+    },
+    "openrouter": {
+        "auth_type": "api_key",
+        "env_var": "OPENROUTER_API_KEY",
+        "setup_text": "Set the OPENROUTER_API_KEY environment variable (or add it to $HERMES_HOME/.env) and restart the WebUI server.",
+    },
+    "opencode-go": {
+        "auth_type": "api_key",
+        "env_var": "OPENCODE_GO_API_KEY",
+        "setup_text": "Set the OPENCODE_GO_API_KEY environment variable (or add it to $HERMES_HOME/.env) and restart the WebUI server.",
+    },
+}
+
 _PROBE_TIMEOUT_SECONDS = 6.0
 # Mirror the account-usage cache TTL so both probe paths age equally.
 _CACHE_TTL_SECONDS = 45.0
@@ -358,10 +379,17 @@ def _opencode_go_row(*, refresh: bool) -> dict[str, Any]:
     return row
 
 
-def get_all_provider_usage_limits(*, refresh: bool = False) -> dict[str, Any]:
-    """Aggregate dashboard payload for every supported subscription provider."""
+def get_all_provider_usage_limits(*, refresh: bool = False, enabled_providers: set[str] | None = None) -> dict[str, Any]:
+    """Aggregate dashboard payload for every supported subscription provider.
+
+    If *enabled_providers* is provided, only providers in that set are probed
+    and returned. Disabled providers are omitted entirely from the dashboard so
+    users can hide providers they are not monitoring.
+    """
     rows: list[dict[str, Any]] = []
     for provider in DASHBOARD_PROVIDERS:
+        if enabled_providers is not None and provider not in enabled_providers:
+            continue
         try:
             if provider in ("anthropic", "openai-codex"):
                 row = _account_usage_row(provider, refresh=refresh)
@@ -390,3 +418,39 @@ def get_all_provider_usage_limits(*, refresh: bool = False) -> dict[str, Any]:
         "providers": rows,
         "generated_at": _utc_now_iso(),
     }
+
+
+def get_token_monitor_settings_payload(settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return provider metadata + current enabled state for the Token Monitor settings pane.
+
+    Reads the enabled-provider map from *settings* when supplied, otherwise falls
+    back to the default set so the pane always renders even before settings load.
+    """
+    enabled = _enabled_providers_from_settings(settings)
+    providers: list[dict[str, Any]] = []
+    for provider in DASHBOARD_PROVIDERS:
+        meta = PROVIDER_CONNECTION_HELP.get(provider, {})
+        providers.append({
+            "provider": provider,
+            "display_name": DISPLAY_NAMES.get(provider, provider),
+            "enabled": provider in enabled,
+            "auth_type": meta.get("auth_type"),
+            "env_var": meta.get("env_var"),
+            "setup_text": meta.get("setup_text"),
+        })
+    return {"providers": providers}
+
+
+def _enabled_providers_from_settings(settings: dict[str, Any] | None = None) -> set[str]:
+    """Resolve the set of providers enabled for monitoring from persisted settings."""
+    if settings is None:
+        try:
+            from api.config import load_settings
+
+            settings = load_settings()
+        except Exception:
+            settings = {}
+    mapping = settings.get("token_monitor_enabled_providers") if isinstance(settings, dict) else None
+    if not isinstance(mapping, dict):
+        return set(DASHBOARD_PROVIDERS)
+    return {str(k).strip() for k, v in mapping.items() if v and str(k).strip() in SUPPORTED_PROVIDERS}

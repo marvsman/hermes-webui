@@ -97,7 +97,7 @@ def test_extensions_panel_warns_about_trust_model_and_stays_install_free():
 
 
 def test_switch_settings_section_supports_extensions_lazy_load():
-    switch_block = _function_block("switchSettingsSection", extra=2300)
+    switch_block = _function_block("switchSettingsSection", extra=2400)
 
     assert "name==='extensions'" in switch_block
     assert "plugins:'Plugins',extensions:'Extensions'" in switch_block
@@ -114,6 +114,11 @@ def test_settings_search_knows_extensions_pane():
     assert "settingsPaneExtensions: 'extensions'" in build_block
     assert "extensions: t('settings_tab_extensions') || 'Extensions'" in filter_block
     assert "extensions: 'settingsPaneExtensions'" in resolve_block
+
+
+def test_switch_settings_section_supports_token_monitor_lazy_load():
+    switch_block = _function_block("switchSettingsSection", extra=2400)
+    assert re.search(r"if\(section==='tokenMonitor'.*?loadTokenMonitorSettings\(\)", switch_block)
 
 
 def test_extensions_panel_fetches_status_endpoint_without_mutating_settings():

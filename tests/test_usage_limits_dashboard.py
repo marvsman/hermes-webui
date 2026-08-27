@@ -162,6 +162,85 @@ def test_account_usage_row_uses_status_message_when_unavailable(usage_limits_mod
     assert row["windows"] == []
 
 
+def test_aggregate_filters_by_enabled_providers(usage_limits_module, monkeypatch):
+    mod = usage_limits_module()
+
+    def fake_account(provider, display_name, *, refresh=False):
+        return {
+            "ok": True,
+            "message": "",
+            "account_limits": {
+                "windows": [{"label": "Session", "used_percent": 10}],
+                "details": [],
+                "plan": None,
+            },
+        }
+
+    monkeypatch.setattr("api.providers._provider_account_usage_status", fake_account, raising=False)
+    # Stop network-dependent rows from reaching out.
+    monkeypatch.setattr(mod, "_openrouter_row", lambda *, refresh: {
+        "provider": "openrouter", "ok": True, "status": "ok", "message": "",
+        "plan": None, "windows": [{"label": "Credits", "used_percent": 20}], "details": [], "checked_at": "",
+    }, raising=False)
+    monkeypatch.setattr(mod, "_opencode_go_row", lambda *, refresh: {
+        "provider": "opencode-go", "ok": True, "status": "ok", "message": "",
+        "plan": None, "windows": [{"label": "Rolling", "used_percent": 30}], "details": [], "checked_at": "",
+    }, raising=False)
+
+    payload = mod.get_all_provider_usage_limits(enabled_providers={"anthropic"})
+    assert [r["provider"] for r in payload["providers"]] == ["anthropic"]
+
+    payload = mod.get_all_provider_usage_limits(enabled_providers={"openrouter", "opencode-go"})
+    assert [r["provider"] for r in payload["providers"]] == ["openrouter", "opencode-go"]
+
+
+def test_enabled_providers_from_settings_defaults_to_all(usage_limits_module):
+    mod = usage_limits_module()
+    assert mod._enabled_providers_from_settings({}) == set(mod.DASHBOARD_PROVIDERS)
+    assert mod._enabled_providers_from_settings({"token_monitor_enabled_providers": None}) == set(mod.DASHBOARD_PROVIDERS)
+
+
+def test_enabled_providers_from_settings_respects_disabled(usage_limits_module):
+    mod = usage_limits_module()
+    settings = {"token_monitor_enabled_providers": {"anthropic": True, "openrouter": False, "opencode-go": True}}
+    assert mod._enabled_providers_from_settings(settings) == {"anthropic", "opencode-go"}
+
+
+def test_token_monitor_settings_payload(usage_limits_module):
+    mod = usage_limits_module()
+    payload = mod.get_token_monitor_settings_payload({
+        "token_monitor_enabled_providers": {"anthropic": True, "openrouter": False}
+    })
+    providers = {p["provider"]: p for p in payload["providers"]}
+    assert providers["anthropic"]["enabled"] is True
+    assert providers["openrouter"]["enabled"] is False
+    assert providers["anthropic"]["auth_type"] == "oauth"
+    assert providers["openrouter"]["auth_type"] == "api_key"
+    assert "OPENROUTER_API_KEY" in providers["openrouter"]["setup_text"]
+
+
+def test_config_default_has_token_monitor_enabled_providers():
+    from api.config import _SETTINGS_DEFAULTS
+
+    assert "token_monitor_enabled_providers" in _SETTINGS_DEFAULTS
+    defaults = _SETTINGS_DEFAULTS["token_monitor_enabled_providers"]
+    assert defaults.get("anthropic") is True
+    assert defaults.get("openrouter") is True
+
+
+def test_settings_save_preserves_token_monitor_map(monkeypatch, tmp_path):
+    from api import config as config_mod
+
+    monkeypatch.setattr(config_mod, "SETTINGS_FILE", tmp_path / "settings.json")
+    config_mod.save_settings({"token_monitor_enabled_providers": {"anthropic": True, "openrouter": False}})
+    saved = config_mod.load_settings()
+    assert saved["token_monitor_enabled_providers"]["anthropic"] is True
+    assert saved["token_monitor_enabled_providers"]["openrouter"] is False
+    # Unmentioned providers keep their defaults.
+    assert saved["token_monitor_enabled_providers"]["openai-codex"] is True
+    assert saved["token_monitor_enabled_providers"]["opencode-go"] is True
+
+
 class _FakeResponse:
     def __init__(self, payload, status=200):
         self._body = json.dumps(payload).encode("utf-8")
@@ -203,7 +282,7 @@ def test_route_registered_and_returns_aggregate(monkeypatch, usage_limits_module
         "parse_qs",
         lambda q, **k: {"refresh": ["1"]},
     ):
-        agg.get_all_provider_usage_limits = lambda *, refresh=False: {
+        agg.get_all_provider_usage_limits = lambda *, refresh=False, enabled_providers=None: {
             "ok": True,
             "providers": [{"provider": "anthropic", "ok": True}],
             "generated_at": "2026-08-27T00:00:00Z",
@@ -301,3 +380,44 @@ def test_usage_panel_registered_in_main_view_panels():
 def test_usage_lazy_loader_attached_to_switch_panel():
     """switchPanel must load usage data when navigating to the usage panel."""
     assert "if (nextPanel === 'usage') { loadUsageLimits(); loadUsagePeek(); }" in PANELS_JS
+
+
+def test_token_monitor_settings_pane_exists():
+    """Settings must have a Token Monitor pane populated by loadTokenMonitorSettings()."""
+    assert 'id="settingsPaneTokenMonitor"' in HTML
+    assert 'id="tokenMonitorProvidersList"' in HTML
+    assert 'id="tokenMonitorClaudeHelp"' in HTML
+
+
+def test_token_monitor_side_menu_item_exists():
+    """Settings side menu must have a Token Monitor section button."""
+    assert re.search(
+        r'<button[^>]*class="side-menu-item"[^>]*'
+        r'data-settings-section="tokenMonitor"[^>]*>.*?'
+        r'<span[^>]*data-i18n="settings_tab_token_monitor"[^>]*>Token Monitor</span>.*?</button>',
+        HTML,
+        re.DOTALL,
+    )
+
+
+def test_token_monitor_lazy_loader_attached_to_switch_settings_section():
+    """switchSettingsSection must load token monitor settings when its tab is selected."""
+    assert re.search(r"if\(section==='tokenMonitor'.*?loadTokenMonitorSettings\(\)", PANELS_JS)
+
+
+def test_token_monitor_save_function_exists():
+    """Frontend must have a function to save token monitor provider toggles."""
+    assert "async function _saveTokenMonitorSettings(){" in PANELS_JS
+    assert "token_monitor_enabled_providers" in PANELS_JS
+
+
+def test_token_monitor_settings_i18n_keys_present():
+    """Token Monitor i18n keys must exist in the English locale block."""
+    # The keys are defined in the en block; a simple source check is enough.
+    assert "settings_tab_token_monitor:" in I18N_JS
+    assert "settings_section_token_monitor_title:" in I18N_JS
+    assert "settings_desc_token_monitor_intro:" in I18N_JS
+
+
+# Read i18n.js source for frontend tests.
+I18N_JS = (REPO / "static" / "i18n.js").read_text(encoding="utf-8")

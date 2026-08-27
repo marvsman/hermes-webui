@@ -8005,6 +8005,7 @@ function switchSettingsSection(name,opts){
   // fresh fetch, which would detach the field it is about to scroll to.
   if(!(opts&&opts.skipLazyLoad)){
     if(section==='providers') loadProvidersPanel();
+    if(section==='tokenMonitor'&&typeof loadTokenMonitorSettings==='function') loadTokenMonitorSettings();
     if(section==='plugins') loadPluginsPanel();
     if(section==='extensions') loadExtensionsPanel();
   }
@@ -8059,7 +8060,11 @@ async function _buildSettingsIndex() {
   if (_settingsIndexPromise) return _settingsIndexPromise;
   const promise = (async () => {
     // Ensure lazy-loaded panes are populated before reading the DOM
-    await Promise.all([loadProvidersPanel(), loadPluginsPanel(), loadExtensionsPanel()]);
+    const paneLoaders=[];
+    paneLoaders.push(loadProvidersPanel());
+    paneLoaders.push(loadPluginsPanel());
+    paneLoaders.push(loadExtensionsPanel());
+    await Promise.all(paneLoaders);
     const index = [];
     const add = (entry) => {
       index.push({ ...entry, _settingsSearchIndex: index.length });
@@ -8069,6 +8074,7 @@ async function _buildSettingsIndex() {
       settingsPaneAppearance: 'appearance',
       settingsPanePreferences: 'preferences',
       settingsPaneProviders: 'providers',
+      settingsPaneTokenMonitor: 'tokenMonitor',
       settingsPanePlugins: 'plugins',
       settingsPaneExtensions: 'extensions',
       settingsPaneSystem: 'system',
@@ -9761,6 +9767,7 @@ async function loadSettingsPanel(){
     _syncHermesPanelSessionActions();
     if(typeof loadDashboardSettings==='function') loadDashboardSettings();
     loadProvidersPanel(); // load provider cards in background
+    if(typeof loadTokenMonitorSettings==='function') loadTokenMonitorSettings(); // load token monitor settings in background
     loadPluginsPanel(); // load plugin/hook visibility in background
     loadExtensionsPanel(); // load extension diagnostics in background
     switchSettingsSection(_settingsSection);
@@ -13567,6 +13574,63 @@ async function loadUsageLimits(force){
 }
 
 let _usagePeekCache=null;
+let _tokenMonitorSettingsCache=null;
+
+async function loadTokenMonitorSettings(){
+  const list=$('tokenMonitorProvidersList');
+  const help=$('tokenMonitorClaudeHelp');
+  if(!list) return;
+  list.innerHTML=`<div style="color:var(--muted);font-size:12px">${esc(t('loading'))}</div>`;
+  try{
+    _tokenMonitorSettingsCache=await api('/api/usage/limits/settings',{cache:'no-store'});
+    const providers=(_tokenMonitorSettingsCache&&_tokenMonitorSettingsCache.providers)||[];
+    if(!providers.length){
+      list.innerHTML=`<div style="color:var(--muted);font-size:12px">${esc(t('providers_empty'))}</div>`;
+      if(help) help.style.display='none';
+      return;
+    }
+    list.innerHTML=providers.map(p=>{
+      const id=esc(String(p.provider||''));
+      const name=esc(String(p.display_name||p.provider||''));
+      const setup=esc(String(p.setup_text||''));
+      const isOauth=(p.auth_type==='oauth');
+      return `<div class="settings-field" style="padding:10px;border:1px solid var(--border2);border-radius:8px" data-token-monitor-provider="${id}">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" class="token-monitor-toggle" data-provider="${id}" ${p.enabled?'checked':''} style="width:15px;height:15px;accent-color:var(--accent)">
+          <span style="font-weight:650">${name}</span>
+        </label>
+        <div style="font-size:11px;color:var(--muted);line-height:1.45;margin-left:23px">${setup}</div>
+        ${isOauth?`<div style="font-size:11px;color:var(--muted);margin-top:6px;margin-left:23px"><span data-i18n="settings_token_monitor_oauth_hint">OAuth provider — authenticate via the Hermes CLI.</span></div>`:''}
+      </div>`;
+    }).join('');
+    list.querySelectorAll('.token-monitor-toggle').forEach(cb=>{
+      cb.addEventListener('change',()=>{_saveTokenMonitorSettings();},{once:false});
+    });
+    if(help) help.style.display=providers.some(p=>p.provider==='anthropic'&&p.enabled)?'block':'none';
+    if(typeof applyTranslations==='function') applyTranslations(list);
+  }catch(e){
+    list.innerHTML=`<div style="color:var(--error);font-size:12px">${esc(t('error_prefix')+(e.message||String(e)))}</div>`;
+    if(help) help.style.display='none';
+  }
+}
+
+async function _saveTokenMonitorSettings(){
+  const list=$('tokenMonitorProvidersList');
+  if(!list) return;
+  const mapping={};
+  list.querySelectorAll('.token-monitor-toggle').forEach(cb=>{
+    mapping[cb.dataset.provider]=!!cb.checked;
+  });
+  const status=$('tokenMonitorStatus');
+  try{
+    await _enqueueSettingsPost({method:'POST',body:JSON.stringify({token_monitor_enabled_providers:mapping})});
+    if(status){status.textContent=t('settings_saved');setTimeout(()=>{if(status)status.textContent='';},2000);}
+    // Refresh usage-limits dashboard if it is currently visible so the change is reflected immediately.
+    if(_currentPanel==='usage'&&typeof loadUsageLimits==='function') loadUsageLimits(true);
+  }catch(e){
+    if(status) status.textContent=t('error_prefix')+(e.message||String(e));
+  }
+}
 
 async function loadUsagePeek(){
   const box=$('usageLimitsPeekBody');
