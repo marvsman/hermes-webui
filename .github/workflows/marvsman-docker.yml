@@ -2,6 +2,10 @@ name: Marvsman Docker Publish
 
 on:
   push:
+    # Master pushes publish an immutable master-<sha7> image so the Compose
+    # auto-bump poller (infra-marvsman-pro) can roll deploys automatically.
+    branches:
+      - master
     tags:
       - 'v*'
       - 'exp-v*'
