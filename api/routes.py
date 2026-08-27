@@ -13305,6 +13305,19 @@ def handle_get(handler, parsed) -> bool:
         with profile_env_for_active_request_readonly("/api/provider/quota", logger_override=logger):
             return j(handler, get_provider_quota(provider_id, refresh=refresh))
 
+    if parsed.path == "/api/usage/limits":
+        # Aggregated subscription usage limits for the Usage Limits panel.
+        # profile_env wrapper so pool reads under the requesting profile, not
+        # the process-default one (#4365 rationale).
+        from api.profiles import profile_env_for_active_request_readonly
+
+        query = parse_qs(parsed.query)
+        refresh = (query.get("refresh", [""])[0] or "").strip().lower() in {"1", "true", "yes", "on"}
+        with profile_env_for_active_request_readonly("/api/usage/limits", logger_override=logger):
+            from api.usage_limits import get_all_provider_usage_limits
+
+            return j(handler, get_all_provider_usage_limits(refresh=refresh))
+
     if parsed.path == "/api/provider/cost-history":
         query = parse_qs(parsed.query)
         provider_id = (query.get("provider", [""])[0] or None)

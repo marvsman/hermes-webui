@@ -1448,6 +1448,17 @@ const LOCALES = {
 
     // panel/runtime i18n
     error_prefix: 'Error: ',
+    tab_usage: 'Usage Limits',
+    usage_title: 'Subscription Usage Limits',
+    usage_peek_hint: 'Open the usage limits dashboard',
+    usage_plan_label: 'Plan: ',
+    usage_resets_in: 'Resets in {time}',
+    usage_checked_prefix: 'Checked ',
+    usage_status_ok: 'OK',
+    usage_status_no_key: 'No API key',
+    usage_status_invalid_key: 'Invalid key',
+    usage_status_unavailable: 'Unavailable',
+    usage_status_unsupported: 'Unsupported',
     default: 'default',
     search: 'Search',
     not_available: 'N/A',

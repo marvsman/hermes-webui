@@ -5328,6 +5328,20 @@ main.main > #mainPlugin{display:none;}
 .provider-cost-budget-input{width:90px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--sidebar);color:var(--text);font-size:12px;}
 .provider-cost-budget-set,.provider-cost-budget-clear{font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--text);cursor:pointer;transition:background .15s;}
 .provider-cost-budget-set:hover,.provider-cost-budget-clear:hover{background:var(--surface);}
+/* ── Usage Limits dashboard (panel: usage) ───────────────────────────────── */
+.usage-windows{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;width:100%;min-width:0;}
+.usage-window{min-width:0;border:1px solid var(--border);border-radius:8px;background:var(--sidebar);padding:8px 10px;}
+.usage-window span{display:block;font-size:10.5px;color:var(--muted);margin-bottom:2px;}
+.usage-window strong{display:block;font-size:14px;font-weight:650;color:var(--text);}
+.usage-meter{height:5px;border-radius:999px;background:rgba(127,127,127,.18);overflow:hidden;margin-top:4px;}
+.usage-meter i{display:block;height:100%;border-radius:999px;background:var(--accent,#3889fd);transition:width .25s ease;}
+.usage-window-warn .usage-meter i{background:#eab308;}
+.usage-window-danger .usage-meter i{background:var(--error,#e05252);}
+.usage-window small{display:block;font-size:10px;color:var(--muted);line-height:1.3;margin-top:3px;overflow-wrap:anywhere;}
+@media (max-width: 520px){
+  .usage-windows{grid-template-columns:1fr;}
+}
+
 .provider-cost-budget-bar-wrap{display:flex;align-items:center;gap:6px;}
 .provider-cost-budget-bar{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
 .provider-cost-budget-bar-fill{height:100%;background:var(--success,#22c55e);border-radius:3px;transition:width .3s;}
