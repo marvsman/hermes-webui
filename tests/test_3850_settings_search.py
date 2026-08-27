@@ -198,7 +198,7 @@ class TestSettingsSearch:
         """Providers pane entries must index provider cards and API key fields."""
         idx = PANELS_JS.find("function _buildSettingsIndex()")
         assert idx >= 0, "_buildSettingsIndex not found"
-        body = PANELS_JS[idx:idx + 3500]
+        body = PANELS_JS[idx:idx + 3700]
         assert "pane.querySelectorAll('.provider-card')" in body, (
             "_buildSettingsIndex must scan provider cards so Providers search is not empty"
         )

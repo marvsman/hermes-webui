@@ -8062,7 +8062,6 @@ async function _buildSettingsIndex() {
     // Ensure lazy-loaded panes are populated before reading the DOM
     const paneLoaders=[];
     paneLoaders.push(loadProvidersPanel());
-    if(typeof loadTokenMonitorSettings==='function') paneLoaders.push(loadTokenMonitorSettings());
     paneLoaders.push(loadPluginsPanel());
     paneLoaders.push(loadExtensionsPanel());
     await Promise.all(paneLoaders);
@@ -13624,7 +13623,7 @@ async function _saveTokenMonitorSettings(){
   });
   const status=$('tokenMonitorStatus');
   try{
-    await api('/api/settings',{method:'POST',body:JSON.stringify({token_monitor_enabled_providers:mapping})});
+    await _enqueueSettingsPost({method:'POST',body:JSON.stringify({token_monitor_enabled_providers:mapping})});
     if(status){status.textContent=t('settings_saved');setTimeout(()=>{if(status)status.textContent='';},2000);}
     // Refresh usage-limits dashboard if it is currently visible so the change is reflected immediately.
     if(_currentPanel==='usage'&&typeof loadUsageLimits==='function') loadUsageLimits(true);
